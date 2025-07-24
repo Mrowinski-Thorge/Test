@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Handzeichen-Erkennung</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tensorflow/4.17.0/tf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tensorflow-models/0.0.4/handpose.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+            max-width: 800px;
+            width: 100%;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        p {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+
+        .video-container {
+            position: relative;
+            margin: 20px auto;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            background: #000;
+        }
+
+        #video {
+            width: 100%;
+            max-width: 640px;
+            height: auto;
+            display: block;
+        }
+
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+            min-width: 140px;
+        }
+
+        #startBtn {
+            background: linear-gradient(45deg, #4CAF50, #45a049);
+            color: white;
+        }
+
+        #startBtn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(76, 175, 80, 0.4);
+        }
+
+        #stopBtn {
+            background: linear-gradient(45deg, #f44336, #da190b);
+            color: white;
+        }
+
+        #stopBtn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(244, 67, 54, 0.4);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .status {
+            text-align: center;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 1.1em;
+        }
+
+        .status.loading {
+            background: linear-gradient(45deg, #ff9800, #f57c00);
+            color: white;
+        }
+
+        .status.ready {
+            background: linear-gradient(45deg, #4CAF50, #45a049);
+            color: white;
+        }
+
+        .status.error {
+            background: linear-gradient(45deg, #f44336, #da190b);
+            color: white;
+        }
+
+        .detection-info {
+            background: rgba(102, 126, 234, 0.1);
+            border: 2px solid rgba(102, 126, 234, 0.3);
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .detection-result {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .confidence {
+            font-size: 1.1em;
+            color: #666;
+        }
+
+        .gesture-indicators {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .gesture-indicator {
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 10px;
+            padding: 15px;
+            text-align: center;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+
+        .gesture-indicator.active {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border-color: rgba(255, 255, 255, 0.3);
+            transform: scale(1.05);
+        }
+
+        .gesture-emoji {
+            font-size: 2em;
+            margin-bottom: 5px;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                margin: 10px;
+                padding: 20px;
+            }
+            
+            h1 {
+                font-size: 2em;
+            }
+            
+            .controls {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            button {
+                width: 100%;
+                max-width: 200px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 KI Handzeichen-Erkennung</h1>
+        <p>Aktivieren Sie Ihre Kamera und zeigen Sie verschiedene Handzeichen vor der Kamera!</p>
+
+        <div class="status" id="status">
+            <div class="loading-spinner"></div>
+            Lade KI-Modell...
+        </div>
+
+        <div class="video-container" id="videoContainer" style="display: none;">
+            <video id="video" autoplay muted playsinline></video>
+            <canvas id="canvas"></canvas>
+        </div>
+
+        <div class="controls">
+            <button id="startBtn" disabled>Kamera starten</button>
+            <button id="stopBtn" disabled>Kamera stoppen</button>
+        </div>
+
+        <div class="detection-info" id="detectionInfo" style="display: none;">
+            <div class="detection-result" id="detectionResult">Keine Hand erkannt</div>
+            <div class="confidence" id="confidence"></div>
+        </div>
+
+        <div class="gesture-indicators">
+            <div class="gesture-indicator" id="thumbsup">
+                <div class="gesture-emoji">👍</div>
+                <div>Daumen hoch</div>
+            </div>
+            <div class="gesture-indicator" id="peace">
+                <div class="gesture-emoji">✌️</div>
+                <div>Victory</div>
+            </div>
+            <div class="gesture-indicator" id="fist">
+                <div class="gesture-emoji">✊</div>
+                <div>Faust</div>
+            </div>
+            <div class="gesture-indicator" id="open">
+                <div class="gesture-emoji">🖐️</div>
+                <div>Offene Hand</div>
+            </div>
+            <div class="gesture-indicator" id="pointing">
+                <div class="gesture-emoji">👉</div>
+                <div>Zeigen</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let model;
+        let video;
+        let canvas;
+        let ctx;
+        let isDetecting = false;
+        let stream;
+
+        const statusEl = document.getElementById('status');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const videoContainer = document.getElementById('videoContainer');
+        const detectionInfo = document.getElementById('detectionInfo');
+        const detectionResult = document.getElementById('detectionResult');
+        const confidence = document.getElementById('confidence');
+
+        // Lade das Handpose-Modell
+        async function loadModel() {
+            try {
+                statusEl.className = 'status loading';
+                statusEl.innerHTML = '<div class="loading-spinner"></div>Lade KI-Modell...';
+                
+                model = await handpose.load();
+                
+                statusEl.className = 'status ready';
+                statusEl.innerHTML = '✅ KI-Modell erfolgreich geladen!';
+                startBtn.disabled = false;
+                
+                console.log('Handpose-Modell geladen');
+            } catch (error) {
+                console.error('Fehler beim Laden des Modells:', error);
+                statusEl.className = 'status error';
+                statusEl.innerHTML = '❌ Fehler beim Laden des KI-Modells';
+            }
+        }
+
+        // Kamera initialisieren
+        async function startCamera() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { 
+                        width: 640, 
+                        height: 480,
+                        facingMode: 'user'
+                    }
+                });
+
+                video = document.getElementById('video');
+                canvas = document.getElementById('canvas');
+                ctx = canvas.getContext('2d');
+
+                video.srcObject = stream;
+                
+                video.onloadedmetadata = () => {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    videoContainer.style.display = 'block';
+                    detectionInfo.style.display = 'block';
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+                    
+                    statusEl.innerHTML = '🎥 Kamera aktiv - Zeigen Sie Ihre Hand!';
+                    
+                    detect();
+                };
+
+            } catch (error) {
+                console.error('Kamera-Fehler:', error);
+                statusEl.className = 'status error';
+                statusEl.innerHTML = '❌ Kamera-Zugriff verweigert oder nicht verfügbar';
+            }
+        }
+
+        // Kamera stoppen
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            
+            videoContainer.style.display = 'none';
+            detectionInfo.style.display = 'none';
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            isDetecting = false;
+            
+            statusEl.className = 'status ready';
+            statusEl.innerHTML = '✅ Bereit - Kamera starten um zu beginnen';
+            
+            // Reset gesture indicators
+            document.querySelectorAll('.gesture-indicator').forEach(el => {
+                el.classList.remove('active');
+            });
+        }
+
+        // Hand-Erkennung
+        async function detect() {
+            if (!isDetecting) {
+                isDetecting = true;
+                
+                const predictions = await model.estimateHands(video);
+                
+                // Canvas leeren
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                if (predictions.length > 0) {
+                    const hand = predictions[0];
+                    
+                    // Handpunkte zeichnen
+                    drawHand(hand.landmarks);
+                    
+                    // Handzeichen erkennen
+                    const gesture = recognizeGesture(hand.landmarks);
+                    updateGestureDisplay(gesture);
+                    
+                } else {
+                    detectionResult.textContent = 'Keine Hand erkannt';
+                    confidence.textContent = 'Halten Sie Ihre Hand vor die Kamera';
+                    
+                    // Reset alle Indikatoren
+                    document.querySelectorAll('.gesture-indicator').forEach(el => {
+                        el.classList.remove('active');
+                    });
+                }
+                
+                isDetecting = false;
+            }
+            
+            if (video && !video.paused) {
+                requestAnimationFrame(detect);
+            }
+        }
+
+        // Hand-Landmarken zeichnen
+        function drawHand(landmarks) {
+            // Verbindungslinien zwischen Fingerpunkten
+            const connections = [
+                [0, 1], [1, 2], [2, 3], [3, 4], // Daumen
+                [0, 5], [5, 6], [6, 7], [7, 8], // Zeigefinger
+                [5, 9], [9, 10], [10, 11], [11, 12], // Mittelfinger
+                [9, 13], [13, 14], [14, 15], [15, 16], // Ringfinger
+                [13, 17], [17, 18], [18, 19], [19, 20], // Kleiner Finger
+                [0, 17] // Handgelenk zu kleinem Finger
+            ];
+
+            // Linien zeichnen
+            ctx.strokeStyle = '#667eea';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            
+            connections.forEach(([start, end]) => {
+                ctx.moveTo(landmarks[start][0], landmarks[start][1]);
+                ctx.lineTo(landmarks[end][0], landmarks[end][1]);
+            });
+            
+            ctx.stroke();
+
+            // Punkte zeichnen
+            ctx.fillStyle = '#764ba2';
+            landmarks.forEach(point => {
+                ctx.beginPath();
+                ctx.arc(point[0], point[1], 4, 0, 2 * Math.PI);
+                ctx.fill();
+            });
+        }
+
+        // Einfache Handzeichen-Erkennung basierend auf Fingerpositionen
+        function recognizeGesture(landmarks) {
+            // Fingerindizes (Spitzen)
+            const thumbTip = landmarks[4];
+            const indexTip = landmarks[8];
+            const middleTip = landmarks[12];
+            const ringTip = landmarks[16];
+            const pinkyTip = landmarks[20];
+
+            // Finger-Basis-Punkte
+            const thumbBase = landmarks[3];
+            const indexBase = landmarks[6];
+            const middleBase = landmarks[10];
+            const ringBase = landmarks[14];
+            const pinkyBase = landmarks[18];
+
+            // Prüfe welche Finger ausgestreckt sind
+            const thumbUp = thumbTip[1] < thumbBase[1];
+            const indexUp = indexTip[1] < indexBase[1];
+            const middleUp = middleTip[1] < middleBase[1];
+            const ringUp = ringTip[1] < ringBase[1];
+            const pinkyUp = pinkyTip[1] < pinkyBase[1];
+
+            const extendedFingers = [thumbUp, indexUp, middleUp, ringUp, pinkyUp];
+            const numExtended = extendedFingers.filter(Boolean).length;
+
+            // Handzeichen basierend auf ausgestreckten Fingern
+            if (numExtended === 0) {
+                return { name: 'Faust', confidence: 0.9, id: 'fist' };
+            } else if (numExtended === 5) {
+                return { name: 'Offene Hand', confidence: 0.9, id: 'open' };
+            } else if (thumbUp && !indexUp && !middleUp && !ringUp && !pinkyUp) {
+                return { name: 'Daumen hoch', confidence: 0.85, id: 'thumbsup' };
+            } else if (!thumbUp && indexUp && middleUp && !ringUp && !pinkyUp) {
+                return { name: 'Victory/Peace', confidence: 0.8, id: 'peace' };
+            } else if (!thumbUp && indexUp && !middleUp && !ringUp && !pinkyUp) {
+                return { name: 'Zeigen', confidence: 0.75, id: 'pointing' };
+            }
+
+            return { name: 'Unbekannte Geste', confidence: 0.5, id: null };
+        }
+
+        // Gestenerkennung anzeigen
+        function updateGestureDisplay(gesture) {
+            detectionResult.textContent = gesture.name;
+            confidence.textContent = `Vertrauen: ${Math.round(gesture.confidence * 100)}%`;
+
+            // Reset alle Indikatoren
+            document.querySelectorAll('.gesture-indicator').forEach(el => {
+                el.classList.remove('active');
+            });
+
+            // Aktiviere den entsprechenden Indikator
+            if (gesture.id && gesture.confidence > 0.7) {
+                const indicator = document.getElementById(gesture.id);
+                if (indicator) {
+                    indicator.classList.add('active');
+                }
+            }
+        }
+
+        // Event Listeners
+        startBtn.addEventListener('click', startCamera);
+        stopBtn.addEventListener('click', stopCamera);
+
+        // Modell beim Laden der Seite laden
+        loadModel();
+    </script>
+</body>
+</html>
